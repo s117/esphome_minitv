@@ -1,0 +1,62 @@
+esphome:
+  name: minitv-test
+  on_boot:
+    - output.turn_on: backlight
+
+esp32:
+  board: pico32
+  framework:
+    type: arduino
+
+logger:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+output:
+  - platform: gpio
+    pin: GPIO4
+    id: backlight
+
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO23
+
+font:
+  - file: "gfonts://Roboto"
+    id: font1
+    size: 32
+    glyphs: "REDGBNYWITHACKOLU "
+
+display:
+  - platform: ili9xxx
+    model: ST7789V
+    dc_pin: GPIO2
+    reset_pin: GPIO19
+    invert_colors: true
+    data_rate: 40MHz
+    spi_mode: mode3
+    dimensions:
+      width: 240
+      height: 240
+      offset_width: 0
+      offset_height: 80
+    transform:
+      mirror_x: false
+      mirror_y: true
+    auto_clear_enabled: false
+    color_palette: 8BIT
+    update_interval: 1s
+    lambda: |-
+      it.fill(Color(0, 0, 0));
+      it.print(20,  10, id(font1), Color(255,   0,   0), "RED");
+      it.print(20,  50, id(font1), Color(  0, 255,   0), "GREEN");
+      it.print(20,  90, id(font1), Color(  0,   0, 255), "BLUE");
+      it.print(20, 130, id(font1), Color(255, 255,   0), "YELLOW");
+      it.print(20, 170, id(font1), Color(  0, 255, 255), "CYAN");
+      it.print(20, 210, id(font1), Color(255, 255, 255), "WHITE");

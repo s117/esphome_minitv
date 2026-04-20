@@ -1,0 +1,995 @@
+esphome:
+  name: minitv
+  friendly_name: MiniTV
+
+esp32:
+  board: pico32
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "MiniTV Hotspot"
+    password: !secret ap_password
+
+captive_portal:
+
+# ─── SPI bus (display only, no MISO needed) ───────────────────────────────────
+spi:
+  clk_pin: GPIO18   # SCL
+  mosi_pin: GPIO23  # SDA
+
+# ─── Fonts ────────────────────────────────────────────────────────────────────
+# montserrat_16/18/24 are LVGL built-in fonts — no explicit definition needed
+font:
+  - file:
+      url: "https://cdn.jsdelivr.net/npm/@mdi/font@latest/fonts/materialdesignicons-webfont.ttf"
+      type: web
+    id: mdi_icons_16
+    size: 16
+    glyphs: [
+      "\U000F029A",  # mdi:gauge
+      "\U000F048B",  # mdi:server
+      "\U000F0502",  # mdi:television
+      "\U000F050F",  # mdi:thermometer
+      "\U000F0594",  # mdi:weather-night
+      "\U000F0599",  # mdi:weather-sunny
+      "\U000F0A33",  # mdi:calendar-week
+    ]
+  - file:
+      url: "https://cdn.jsdelivr.net/npm/@mdi/font@latest/fonts/materialdesignicons-webfont.ttf"
+      type: web
+    id: mdi_icons_24
+    size: 24
+    glyphs: [
+      "\U000F035B",  # mdi:memory (chip temp)
+      "\U000F050F",  # mdi:thermometer
+      "\U000F091F",  # mdi:wifi-strength-1  (very weak)
+      "\U000F0922",  # mdi:wifi-strength-2  (weak)
+      "\U000F0925",  # mdi:wifi-strength-3  (medium)
+      "\U000F0928",  # mdi:wifi-strength-4  (strong)
+      "\U000F092B",  # mdi:wifi-strength-alert-outline (disconnected)
+    ]
+  - file:
+      url: "https://cdn.jsdelivr.net/npm/@mdi/font@latest/fonts/materialdesignicons-webfont.ttf"
+      type: web
+    id: mdi_icons_44
+    size: 44
+    glyphs: [
+      "\U000F0590",  # mdi:weather-cloudy
+      "\U000F0591",  # mdi:weather-fog
+      "\U000F0593",  # mdi:weather-lightning
+      "\U000F0595",  # mdi:weather-partly-cloudy
+      "\U000F0597",  # mdi:weather-rainy
+      "\U000F0598",  # mdi:weather-snowy
+      "\U000F0599",  # mdi:weather-sunny
+      "\U000F0F38",  # mdi:weather-tornado
+    ]
+
+# ─── Time (synced from Home Assistant) ────────────────────────────────────────
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# ─── Sensors ──────────────────────────────────────────────────────────────────
+sensor:
+  - platform: wifi_signal
+    name: "MiniTV WiFi Signal"
+    id: wifi_rssi
+    update_interval: 60s
+
+  - platform: internal_temperature
+    name: "MiniTV Chip Temperature"
+    id: chip_temp
+    update_interval: 30s
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: status_bar_chip_temp_value
+            text: !lambda return str_sprintf("%.1f°C", x);
+
+  - platform: homeassistant
+    entity_id: sensor.shellypmminig3_84fce63eb108_power
+    id: server_power
+    name: "Server Room Power"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: server_room_left_value
+            text: !lambda return str_sprintf("%.0fW", x);
+
+  - platform: homeassistant
+    entity_id: sensor.server_room_temperature
+    id: server_room_temp
+    name: "Server Room Temperature"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: server_room_right_value
+            text: !lambda return str_sprintf("%.1f°C", x);
+
+  - platform: homeassistant
+    entity_id: sensor.shellypmminig3_ecda3bc6f94c_power
+    id: desktop_power
+    name: "Desktop Power"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: living_room_left_value
+            text: !lambda return str_sprintf("%.0fW", x);
+
+  - platform: homeassistant
+    entity_id: sensor.living_room_current_temperature
+    id: living_room_temp
+    name: "Living Room Temperature"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: living_room_right_value
+            text: !lambda return str_sprintf("%.1f°C", x);
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_temperature
+    id: outside_temp
+    name: "Outside Temperature"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: weather_outdoor_temp_value
+            text: !lambda return str_sprintf("%.1f°C", x);
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_humidity
+    id: outside_humidity
+    name: "Outside Humidity"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: weather_outdoor_humidity_value
+            text: !lambda return str_sprintf("%.0f%%", x);
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_pressure
+    id: outside_pressure
+    name: "Outside Pressure"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: weather_outdoor_pressure_value
+            text: !lambda return str_sprintf("%.0fhPa", x);
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_weather_code
+    id: weather_code
+    name: "Weather Code"
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: weather_outdoor_status_icon
+            text: !lambda |-
+              int c = (int)x;
+              if (c == 800)             return std::string("\U000F0599");
+              if (c >= 801 && c <= 803) return std::string("\U000F0595");
+              if (c == 804)             return std::string("\U000F0590");
+              if (c >= 500 && c <= 531) return std::string("\U000F0597");
+              if (c >= 300 && c <= 321) return std::string("\U000F0597");
+              if (c >= 600 && c <= 622) return std::string("\U000F0598");
+              if (c >= 200 && c <= 232) return std::string("\U000F0593");
+              if (c >= 700 && c <= 781) {
+                if (c == 781)           return std::string("\U000F0F38");
+                else                    return std::string("\U000F0591");
+              }
+              return std::string("\U000F0599");
+
+# ─── Text sensors for sunrise / sunset ───────────────────────────────────────
+# HA provides UTC ISO 8601 datetimes; convert to local time via ha_time UTC offset.
+text_sensor:
+  - platform: homeassistant
+    entity_id: sensor.sun_next_rising
+    id: sun_rise_raw
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: weather_outdoor_sun_rise_value
+            text: !lambda |-
+              if (x.length() < 16) return x;
+              auto local = id(ha_time).now();
+              auto utc   = id(ha_time).utcnow();
+              int off = (local.hour - utc.hour) * 60 + (local.minute - utc.minute);
+              if (off >  720) off -= 1440;
+              if (off < -720) off += 1440;
+              int h = std::stoi(x.substr(11, 2));
+              int m = std::stoi(x.substr(14, 2));
+              int t = (h * 60 + m + off + 1440) % 1440;
+              return str_sprintf("%02d:%02d", t / 60, t % 60);
+
+  - platform: homeassistant
+    entity_id: sensor.sun_next_setting
+    id: sun_set_raw
+    internal: true
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: weather_outdoor_sun_set_value
+            text: !lambda |-
+              if (x.length() < 16) return x;
+              auto local = id(ha_time).now();
+              auto utc   = id(ha_time).utcnow();
+              int off = (local.hour - utc.hour) * 60 + (local.minute - utc.minute);
+              if (off >  720) off -= 1440;
+              if (off < -720) off += 1440;
+              int h = std::stoi(x.substr(11, 2));
+              int m = std::stoi(x.substr(14, 2));
+              int t = (h * 60 + m + off + 1440) % 1440;
+              return str_sprintf("%02d:%02d", t / 60, t % 60);
+
+# ─── Touch pads ───────────────────────────────────────────────────────────────
+# To calibrate: set setup_mode: true, flash, check serial logs for raw values,
+# set threshold just above the idle value, then set setup_mode: false.
+esp32_touch:
+  setup_mode: false
+
+binary_sensor:
+  - platform: esp32_touch
+    name: "Left Touch"
+    pin: GPIO13
+    threshold: 500
+
+  - platform: esp32_touch
+    name: "Right Touch"
+    pin: GPIO15
+    threshold: 500
+
+# ─── Display backlight (PWM, controllable from HA) ────────────────────────────
+output:
+  - platform: ledc
+    pin: GPIO4
+    id: backlight_pwm
+
+# ─── Status LED max brightness (adjustable from HA) ──────────────────────────
+number:
+  - platform: template
+    name: "MiniTV LED Max Brightness"
+    id: led_max_brightness
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 30
+    restore_value: true
+    unit_of_measurement: "%"
+    entity_category: config
+
+# ─── WS2812B status LED + display backlight ───────────────────────────────────
+light:
+  - platform: esp32_rmt_led_strip
+    rgb_order: GRB
+    chipset: WS2812
+    pin: GPIO27
+    num_leds: 1
+    name: "MiniTV Status LED"
+    id: status_led
+    restore_mode: ALWAYS_ON
+    effects:
+      - lambda:
+          name: "Slow Pulse"
+          update_interval: 50ms
+          lambda: |-
+            static float t = 0.0f;
+            t += 50.0f / 3000.0f;   // 3-second full cycle
+            if (t > 1.0f) t -= 1.0f;
+            float b = (sinf(t * 2.0f * 3.14159265f) + 1.0f) / 2.0f;
+            b *= id(led_max_brightness).state / 100.0f;
+            auto call = id(status_led)->turn_on();
+            call.set_brightness(b < 0.01f ? 0.01f : b);
+            call.set_transition_length(0);
+            call.set_publish(false);
+            call.set_save(false);
+            call.perform();
+
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "MiniTV Display Backlight"
+    id: backlight
+    restore_mode: ALWAYS_ON
+    default_transition_length: 500ms
+
+# ─── Intervals ────────────────────────────────────────────────────────────────
+interval:
+  # Update LED color to reflect connectivity state
+  - interval: 5s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - if:
+                condition:
+                  api.connected:
+                then:
+                  - light.turn_on:
+                      id: status_led
+                      red: 0%
+                      green: 100%
+                      blue: 0%
+                      effect: "Slow Pulse"
+                else:
+                  - light.turn_on:
+                      id: status_led
+                      red: 0%
+                      green: 0%
+                      blue: 100%
+                      effect: "Slow Pulse"
+          else:
+            - light.turn_on:
+                id: status_led
+                red: 100%
+                green: 0%
+                blue: 0%
+                effect: "Slow Pulse"
+
+  # Update time, date, weekday, and WiFi signal icon every second
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: return id(ha_time).now().is_valid();
+          then:
+            - lvgl.label.update:
+                id: status_bar_time_value
+                text: !lambda return id(ha_time).now().strftime("%H:%M:%S");
+            - lvgl.label.update:
+                id: weather_date_value
+                text: !lambda |-
+                  auto t = id(ha_time).now();
+                  return str_sprintf("%d/%d", t.month, t.day_of_month);
+            - lvgl.label.update:
+                id: weather_weekday_value
+                text: !lambda |-
+                  static const char* days[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+                  return std::string(days[id(ha_time).now().day_of_week - 1]);
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - lvgl.label.update:
+                id: status_bar_wifi_signal_icon
+                text: !lambda |-
+                  float r = id(wifi_rssi).state;
+                  if (isnan(r) || r < -75) return std::string("\U000F091F");
+                  if (r < -65) return std::string("\U000F0922");
+                  if (r < -55) return std::string("\U000F0925");
+                  return std::string("\U000F0928");
+          else:
+            - lvgl.label.update:
+                id: status_bar_wifi_signal_icon
+                text: "\U000F092B"
+
+# ─── ST7789V3 240×240 display (LVGL-controlled, no lambda) ───────────────────
+display:
+  - platform: ili9xxx
+    model: ST7789V
+    id: main_display
+    dc_pin: GPIO2       # RS
+    reset_pin: GPIO19
+    # cs_pin omitted: CS is wired to GND (permanently selected)
+    invert_colors: true
+    data_rate: 40MHz
+    spi_mode: mode3
+    dimensions:
+      width: 240
+      height: 240
+      offset_width: 0
+      offset_height: 80
+    transform:
+      mirror_x: false
+      mirror_y: true
+    auto_clear_enabled: false
+
+# ─── LVGL ─────────────────────────────────────────────────────────────────────
+lvgl:
+  displays:
+    - main_display
+  color_depth: 16
+  buffer_size: 25%
+  pages:
+    - id: canvas_1
+      bg_color: 0x000000
+      pad_all: 0
+      widgets:
+        - obj:
+            id: status_bar_left_section
+            x: 0
+            y: 0
+            width: 120
+            height: 35
+            align: TOP_LEFT
+            bg_color: 0x000000
+            bg_opa: 0%
+            border_color: 0x000000
+            border_opa: 0%
+            pad_all: 0
+            widgets:
+              - label:
+                  id: status_bar_wifi_signal_icon
+                  x: 0
+                  y: 0
+                  width: 30
+                  height: 30
+                  align: LEFT_MID
+                  text: "\U000F092B"
+                  text_font: mdi_icons_24
+                  text_align: CENTER
+                  text_color: 0xFFFFFF
+              - label:
+                  id: status_bar_time_value
+                  x: 32
+                  y: 0
+                  height: 20
+                  align: LEFT_MID
+                  text: "00:00:00"
+                  text_color: 0xFFFFFF
+                  long_mode: CLIP
+                  text_font: montserrat_18
+
+        - obj:
+            id: status_bar_right_section
+            x: 0
+            y: 0
+            width: 120
+            height: 35
+            align: TOP_RIGHT
+            bg_color: 0x000000
+            bg_opa: 0%
+            border_color: 0x000000
+            border_opa: 0%
+            pad_all: 0
+            widgets:
+              - label:
+                  id: status_bar_chip_temp_ico
+                  x: 0
+                  y: 0
+                  width: 30
+                  height: 30
+                  align: LEFT_MID
+                  text: "\U000F035B"
+                  text_font: mdi_icons_24
+                  text_align: CENTER
+                  text_color: 0xFFFFFF
+              - label:
+                  id: status_bar_chip_temp_value
+                  x: 32
+                  y: 0
+                  height: 20
+                  align: LEFT_MID
+                  text: "--.-°C"
+                  text_color: 0xFFFFFF
+                  text_align: LEFT
+                  long_mode: CLIP
+                  text_font: montserrat_18
+
+        - obj:
+            id: weather_area
+            x: 5
+            y: 40
+            width: 230
+            height: 80
+            bg_color: 0x000000
+            bg_opa: 0%
+            border_width: 1
+            border_color: 0x4B5563
+            radius: 8
+            pad_all: 0
+            widgets:
+              - obj:
+                  id: weather_left_section
+                  x: 0
+                  y: 0
+                  width: 60
+                  height: 78
+                  align: LEFT_MID
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: weather_outdoor_status_icon
+                        x: 0
+                        y: 0
+                        width: 55
+                        height: 55
+                        align: TOP_MID
+                        text: "\U000F0595"
+                        text_font: mdi_icons_44
+                        text_align: CENTER
+                        text_color: 0xFFFFFF
+                    - label:
+                        id: weather_date_value
+                        x: 0
+                        y: 0
+                        width: 55
+                        height: 20
+                        align: BOTTOM_MID
+                        text: "--/--"
+                        text_color: 0xFFFFFF
+                        text_align: CENTER
+                        text_font: montserrat_18
+              - obj:
+                  id: weather_right_section
+                  x: 60
+                  y: 0
+                  width: 168
+                  height: 78
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  radius: 8
+                  pad_all: 0
+                  widgets:
+                    - obj:
+                        id: weather_outdoor_temp_section
+                        x: 0
+                        y: 0
+                        width: 82
+                        height: 23
+                        align: TOP_LEFT
+                        bg_color: 0x000000
+                        bg_opa: 0%
+                        border_color: 0x000000
+                        border_opa: 0%
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: weather_outdoor_temp_icon
+                              x: 0
+                              y: 0
+                              width: 16
+                              height: 16
+                              align: LEFT_MID
+                              text: "\U000F050F"
+                              text_font: mdi_icons_16
+                              text_align: CENTER
+                              text_color: 0x005EFF
+                          - label:
+                              id: weather_outdoor_temp_value
+                              x: 16
+                              y: 0
+                              height: 20
+                              align: LEFT_MID
+                              text: "--.-°C"
+                              text_color: 0xFFFFFF
+                              long_mode: CLIP
+                              text_font: montserrat_16
+                    - obj:
+                        id: weather_outdoor_humidity_section
+                        x: 0
+                        y: 0
+                        width: 82
+                        height: 23
+                        align: TOP_RIGHT
+                        bg_color: 0x000000
+                        bg_opa: 0%
+                        border_color: 0x000000
+                        border_opa: 0%
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: weather_outdoor_humidity_icon
+                              x: 0
+                              y: 0
+                              width: 16
+                              height: 16
+                              align: LEFT_MID
+                              text: "\uF043"
+                              text_font: montserrat_16
+                              text_align: CENTER
+                              text_color: 0x00EAFF
+                          - label:
+                              id: weather_outdoor_humidity_value
+                              x: 16
+                              y: 0
+                              height: 20
+                              align: LEFT_MID
+                              text: "--%"
+                              text_color: 0xFFFFFF
+                              long_mode: CLIP
+                              text_font: montserrat_16
+                    - obj:
+                        id: weather_outdoor_sun_rise_section
+                        x: 0
+                        y: 0
+                        width: 82
+                        height: 23
+                        align: LEFT_MID
+                        bg_color: 0x000000
+                        bg_opa: 0%
+                        border_color: 0x000000
+                        border_opa: 0%
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: weather_outdoor_sun_rise_icon
+                              x: 0
+                              y: 0
+                              width: 16
+                              height: 16
+                              align: LEFT_MID
+                              text: "\U000F0599"
+                              text_font: mdi_icons_16
+                              text_align: CENTER
+                              text_color: 0xFF4800
+                          - label:
+                              id: weather_outdoor_sun_rise_value
+                              x: 16
+                              y: 0
+                              height: 20
+                              align: LEFT_MID
+                              text: "--:--"
+                              text_color: 0xFFFFFF
+                              long_mode: CLIP
+                              text_font: montserrat_16
+                    - obj:
+                        id: weather_outdoor_sun_set_section
+                        x: 0
+                        y: 0
+                        width: 82
+                        height: 23
+                        align: RIGHT_MID
+                        bg_color: 0x000000
+                        bg_opa: 0%
+                        border_color: 0x000000
+                        border_opa: 0%
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: weather_outdoor_sun_set_icon
+                              x: 0
+                              y: 0
+                              width: 16
+                              height: 16
+                              align: LEFT_MID
+                              text: "\U000F0594"
+                              text_font: mdi_icons_16
+                              text_align: CENTER
+                              text_color: 0xFFB700
+                          - label:
+                              id: weather_outdoor_sun_set_value
+                              x: 16
+                              y: 0
+                              height: 20
+                              align: LEFT_MID
+                              text: "--:--"
+                              text_color: 0xFFFFFF
+                              long_mode: CLIP
+                              text_font: montserrat_16
+                    - obj:
+                        id: weather_weekday_section
+                        x: 0
+                        y: 0
+                        width: 82
+                        height: 23
+                        align: BOTTOM_LEFT
+                        bg_color: 0x000000
+                        bg_opa: 0%
+                        border_color: 0x000000
+                        border_opa: 0%
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: weather_weekday_icon
+                              x: 0
+                              y: 0
+                              width: 16
+                              height: 16
+                              align: LEFT_MID
+                              text: "\U000F0A33"
+                              text_font: mdi_icons_16
+                              text_align: CENTER
+                              text_color: 0x999999
+                          - label:
+                              id: weather_weekday_value
+                              x: 16
+                              y: 0
+                              height: 20
+                              align: LEFT_MID
+                              text: "---"
+                              text_color: 0xFFFFFF
+                              long_mode: CLIP
+                              text_font: montserrat_16
+                    - obj:
+                        id: weather_outdoor_pressure_section
+                        x: 0
+                        y: 0
+                        width: 82
+                        height: 23
+                        align: BOTTOM_RIGHT
+                        bg_color: 0x000000
+                        bg_opa: 0%
+                        border_color: 0x000000
+                        border_opa: 0%
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: weather_outdoor_pressure_icon
+                              x: 0
+                              y: 0
+                              width: 16
+                              height: 16
+                              align: LEFT_MID
+                              text: "\U000F029A"
+                              text_font: mdi_icons_16
+                              text_align: CENTER
+                              text_color: 0x11FF00
+                          - label:
+                              id: weather_outdoor_pressure_value
+                              x: 16
+                              y: 0
+                              width: 62
+                              height: 20
+                              align: LEFT_MID
+                              text: "----hPa"
+                              text_color: 0xFFFFFF
+                              long_mode: CLIP
+                              text_font: montserrat_16
+
+        - obj:
+            id: server_room_section
+            x: 5
+            y: 125
+            width: 230
+            height: 55
+            bg_color: 0x000000
+            bg_opa: 0%
+            border_width: 1
+            border_color: 0x4B5563
+            radius: 8
+            pad_all: 0
+            widgets:
+              - obj:
+                  id: server_room_upper_section
+                  x: 0
+                  y: 0
+                  width: 228
+                  height: 25
+                  align: TOP_MID
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: server_room_upper_icon
+                        x: 0
+                        y: 0
+                        width: 20
+                        height: 20
+                        align: TOP_LEFT
+                        text: "\U000F048B"
+                        text_font: mdi_icons_16
+                        text_align: CENTER
+                        text_color: 0xFFFFFF
+                    - label:
+                        id: server_room_upper_label
+                        x: 22
+                        y: 0
+                        width: 200
+                        height: 20
+                        align: TOP_LEFT
+                        text: "Server room"
+                        text_color: 0xFFFFFF
+                        text_align: LEFT
+                        text_font: montserrat_16
+              - obj:
+                  id: server_room_left_section
+                  x: 0
+                  y: 0
+                  width: 112
+                  height: 33
+                  align: BOTTOM_LEFT
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: server_room_left_icon
+                        x: 0
+                        y: 0
+                        width: 30
+                        height: 30
+                        align: LEFT_MID
+                        text: "\uF0E7"
+                        text_font: montserrat_24
+                        text_align: CENTER
+                        text_color: 0xFFB700
+                    - label:
+                        id: server_room_left_value
+                        x: 32
+                        y: 0
+                        width: 72
+                        height: 20
+                        align: LEFT_MID
+                        text: "---W"
+                        text_color: 0xFFFFFF
+                        long_mode: CLIP
+                        text_font: montserrat_18
+              - obj:
+                  id: server_room_right_section
+                  x: 0
+                  y: 0
+                  width: 112
+                  height: 33
+                  align: BOTTOM_RIGHT
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: server_room_right_icon
+                        x: 0
+                        y: 0
+                        width: 30
+                        height: 30
+                        align: LEFT_MID
+                        text: "\U000F050F"
+                        text_font: mdi_icons_24
+                        text_align: CENTER
+                        text_color: 0x005EFF
+                    - label:
+                        id: server_room_right_value
+                        x: 32
+                        y: 0
+                        width: 72
+                        height: 20
+                        align: LEFT_MID
+                        text: "--.-°C"
+                        text_color: 0xFFFFFF
+                        long_mode: CLIP
+                        text_font: montserrat_18
+
+        - obj:
+            id: living_room_section
+            x: 5
+            y: 185
+            width: 230
+            height: 55
+            bg_color: 0x000000
+            bg_opa: 0%
+            border_width: 1
+            border_color: 0x4B5563
+            radius: 8
+            pad_all: 0
+            widgets:
+              - obj:
+                  id: living_room_upper_section
+                  x: 0
+                  y: 0
+                  width: 228
+                  height: 25
+                  align: TOP_MID
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: living_room_upper_icon
+                        x: 0
+                        y: 0
+                        width: 20
+                        height: 20
+                        align: TOP_LEFT
+                        text: "\U000F0502"
+                        text_font: mdi_icons_16
+                        text_align: CENTER
+                        text_color: 0xFFFFFF
+                    - label:
+                        id: living_room_upper_label
+                        x: 22
+                        y: 0
+                        width: 200
+                        height: 20
+                        align: TOP_LEFT
+                        text: "Living room"
+                        text_color: 0xFFFFFF
+                        text_align: LEFT
+                        text_font: montserrat_16
+              - obj:
+                  id: living_room_left_section
+                  x: 0
+                  y: 0
+                  width: 112
+                  height: 33
+                  align: BOTTOM_LEFT
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: living_room_left_icon
+                        x: 0
+                        y: 0
+                        width: 30
+                        height: 30
+                        align: LEFT_MID
+                        text: "\uF0E7"
+                        text_font: montserrat_24
+                        text_align: CENTER
+                        text_color: 0xFFB700
+                    - label:
+                        id: living_room_left_value
+                        x: 32
+                        y: 0
+                        width: 72
+                        height: 20
+                        align: LEFT_MID
+                        text: "---W"
+                        text_color: 0xFFFFFF
+                        long_mode: CLIP
+                        text_font: montserrat_18
+              - obj:
+                  id: living_room_right_section
+                  x: 0
+                  y: 0
+                  width: 112
+                  height: 33
+                  align: BOTTOM_RIGHT
+                  bg_color: 0x000000
+                  bg_opa: 0%
+                  border_color: 0x000000
+                  border_opa: 0%
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        id: living_room_right_icon
+                        x: 0
+                        y: 0
+                        width: 30
+                        height: 30
+                        align: LEFT_MID
+                        text: "\U000F050F"
+                        text_font: mdi_icons_24
+                        text_align: CENTER
+                        text_color: 0x005EFF
+                    - label:
+                        id: living_room_right_value
+                        x: 32
+                        y: 0
+                        width: 72
+                        height: 20
+                        align: LEFT_MID
+                        text: "--.-°C"
+                        text_color: 0xFFFFFF
+                        long_mode: CLIP
+                        text_font: montserrat_18

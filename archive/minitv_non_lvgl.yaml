@@ -1,0 +1,389 @@
+esphome:
+  name: minitv
+  friendly_name: MiniTV
+
+esp32:
+  board: pico32
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "MiniTV Hotspot"
+    password: !secret ap_password
+
+captive_portal:
+
+# ─── SPI bus (display only, no MISO needed) ───────────────────────────────────
+spi:
+  clk_pin: GPIO18  # SCL
+  mosi_pin: GPIO23  # SDA
+
+# ─── Fonts (downloaded from Google Fonts at compile time) ─────────────────────
+font:
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 16
+    glyphs: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:.-+/ %°"
+  - file: "gfonts://Roboto"
+    id: font_medium
+    size: 24
+    glyphs: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:.-+/ %°"
+  - file: "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.ttf"
+    id: icon_small
+    size: 20
+    glyphs:
+      - "\U000F050F"   # mdi:thermometer
+      - "\U000F05A9"   # mdi:wifi
+      - "\U000F0241"   # mdi:flash (power)
+      - "\U000F058E"   # mdi:water-percent (humidity)
+      - "\U000F029A"   # mdi:gauge (pressure)
+      - "\U000F035B"   # mdi:chip (CPU)
+  - file: "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.ttf"
+    id: icon_weather
+    size: 48
+    glyphs:
+      - "\U000F0599"   # mdi:weather-sunny
+      - "\U000F0595"   # mdi:weather-partly-cloudy
+      - "\U000F0590"   # mdi:weather-cloudy
+      - "\U000F0597"   # mdi:weather-rainy
+      - "\U000F0598"   # mdi:weather-snowy
+      - "\U000F0593"   # mdi:weather-lightning
+      - "\U000F0591"   # mdi:weather-fog
+
+# ─── Colors ───────────────────────────────────────────────────────────────────
+color:
+  - id: color_black
+    red: 0%
+    green: 0%
+    blue: 0%
+  - id: color_white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: color_gray
+    red: 50%
+    green: 50%
+    blue: 50%
+  - id: color_cyan
+    red: 0%
+    green: 100%
+    blue: 100%
+  - id: color_yellow
+    red: 100%
+    green: 90%
+    blue: 0%
+  - id: color_red
+    red: 100%
+    green: 0%
+    blue: 0%
+  - id: color_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  # Page header background colors
+  - id: hdr_clock
+    red: 10%
+    green: 20%
+    blue: 70%
+  - id: hdr_system
+    red: 0%
+    green: 55%
+    blue: 20%
+  - id: hdr_server
+    red: 80%
+    green: 35%
+    blue: 0%
+  - id: hdr_living
+    red: 0%
+    green: 45%
+    blue: 55%
+
+# ─── Time (synced from Home Assistant) ────────────────────────────────────────
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# ─── Sensors ──────────────────────────────────────────────────────────────────
+sensor:
+  - platform: wifi_signal
+    name: "MiniTV WiFi Signal"
+    id: wifi_rssi
+    update_interval: 60s
+
+  - platform: internal_temperature
+    name: "MiniTV Chip Temperature"
+    id: chip_temp
+    update_interval: 30s
+
+  - platform: homeassistant
+    entity_id: sensor.shellypmminig3_84fce63eb108_power
+    id: server_power
+    name: "Server Room Power"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.server_room_temperature
+    id: server_room_temp
+    name: "Server Room Temperature"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.shellypmminig3_ecda3bc6f94c_power
+    id: desktop_power
+    name: "Desktop Power"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.living_room_current_temperature
+    id: living_room_temp
+    name: "Living Room Temperature"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_temperature
+    id: outside_temp
+    name: "Outside Temperature"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_weather_code
+    id: weather_code
+    name: "Weather Code"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_humidity
+    id: outside_humidity
+    name: "Outside Humidity"
+    internal: true
+
+  - platform: homeassistant
+    entity_id: sensor.openweathermap_pressure
+    id: outside_pressure
+    name: "Outside Pressure"
+    internal: true
+
+# ─── Touch pads ───────────────────────────────────────────────────────────────
+# To calibrate: set setup_mode: true, flash, check serial logs for raw values,
+# set threshold just above the idle value, then set setup_mode: false.
+esp32_touch:
+  setup_mode: false
+
+binary_sensor:
+  - platform: esp32_touch
+    name: "Left Touch"
+    pin: GPIO13
+    threshold: 500  # calibrate — see note above
+
+  - platform: esp32_touch
+    name: "Right Touch"
+    pin: GPIO15
+    threshold: 500  # calibrate — see note above
+
+# ─── Display backlight (PWM, controllable from HA) ────────────────────────────
+output:
+  - platform: ledc
+    pin: GPIO4
+    id: backlight_pwm
+
+# ─── Status LED max brightness (adjustable from HA) ──────────────────────────
+number:
+  - platform: template
+    name: "MiniTV LED Max Brightness"
+    id: led_max_brightness
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 30
+    restore_value: true
+    unit_of_measurement: "%"
+    entity_category: config
+
+# ─── WS2812B status LED + display backlight ───────────────────────────────────
+light:
+  - platform: esp32_rmt_led_strip
+    rgb_order: GRB
+    chipset: WS2812
+    pin: GPIO27
+    num_leds: 1
+    name: "MiniTV Status LED"
+    id: status_led
+    restore_mode: ALWAYS_ON
+    effects:
+      - lambda:
+          name: "Slow Pulse"
+          update_interval: 50ms
+          lambda: |-
+            static float t = 0.0f;
+            t += 50.0f / 3000.0f;   // 3-second full cycle
+            if (t > 1.0f) t -= 1.0f;
+            float b = (sinf(t * 2.0f * 3.14159265f) + 1.0f) / 2.0f;
+            b *= id(led_max_brightness).state / 100.0f;
+            auto call = id(status_led)->turn_on();
+            call.set_brightness(b < 0.01f ? 0.01f : b);
+            call.set_transition_length(0);
+            call.set_publish(false);
+            call.set_save(false);
+            call.perform();
+
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "MiniTV Display Backlight"
+    id: backlight
+    restore_mode: ALWAYS_ON
+    default_transition_length: 500ms
+
+# Update LED color to reflect connectivity state
+interval:
+  - interval: 5s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - if:
+                condition:
+                  api.connected:
+                then:
+                  - light.turn_on:
+                      id: status_led
+                      red: 0%
+                      green: 100%
+                      blue: 0%
+                      effect: "Slow Pulse"
+                else:
+                  - light.turn_on:
+                      id: status_led
+                      red: 0%
+                      green: 0%
+                      blue: 100%
+                      effect: "Slow Pulse"
+          else:
+            - light.turn_on:
+                id: status_led
+                red: 100%
+                green: 0%
+                blue: 0%
+                effect: "Slow Pulse"
+
+# ─── ST7789V3 240×240 display ─────────────────────────────────────────────────
+display:
+  - platform: ili9xxx
+    model: ST7789V
+    dc_pin: GPIO2       # RS
+    reset_pin: GPIO19
+    # cs_pin omitted: CS is wired to GND (permanently selected)
+    invert_colors: true
+    data_rate: 40MHz
+    spi_mode: mode3
+    dimensions:
+      width: 240
+      height: 240
+      offset_width: 0
+      offset_height: 80
+    transform:
+      mirror_x: false
+      mirror_y: true
+    color_palette: 8BIT
+    auto_clear_enabled: false
+    update_interval: 1s
+    lambda: |-
+      static const char* ICO_THERM = "\U000F050F";
+      static const char* ICO_WIFI  = "\U000F05A9";
+      static const char* ICO_FLASH = "\U000F0241";
+      static const char* ICO_HUMID = "\U000F058E";
+      static const char* ICO_GAUGE = "\U000F029A";
+      static const char* ICO_CPU   = "\U000F035B";
+
+      auto wx_icon = [](float code) -> const char* {
+        int c = (int)code;
+        if (c == 800)              return "\U000F0599";
+        if (c >= 801 && c <= 803) return "\U000F0595";
+        if (c == 804)              return "\U000F0590";
+        if (c >= 500 && c <= 531) return "\U000F0597";
+        if (c >= 300 && c <= 321) return "\U000F0597";
+        if (c >= 600 && c <= 622) return "\U000F0598";
+        if (c >= 200 && c <= 232) return "\U000F0593";
+        if (c >= 700 && c <= 781) return "\U000F0591";
+        return "\U000F0599";
+      };
+
+      auto wx_label = [](float code) -> const char* {
+        int c = (int)code;
+        if (c == 800)              return "CLEAR";
+        if (c >= 801 && c <= 804) return "CLOUDY";
+        if (c >= 500 && c <= 531) return "RAIN";
+        if (c >= 600 && c <= 622) return "SNOW";
+        if (c >= 200 && c <= 232) return "STORM";
+        if (c >= 300 && c <= 321) return "DRIZZLE";
+        if (c >= 700 && c <= 781) return "FOG";
+        return "---";
+      };
+
+      it.fill(id(color_black));
+
+      // Section 1 (y=0–47): Date & Time
+      if (id(ha_time).now().is_valid()) {
+        it.strftime(8,  5, id(font_small),  id(color_gray),  "%a %d %b", id(ha_time).now());
+        it.strftime(8, 22, id(font_medium), id(color_white), "%H:%M:%S", id(ha_time).now());
+      }
+      it.filled_rectangle(0, 47, 240, 1, id(color_gray));
+
+      // Section 2 (y=48–79): System
+      it.print(8, 54, id(icon_small), id(color_gray), ICO_WIFI);
+      if (!isnan(id(wifi_rssi).state))
+        it.printf(32, 57, id(font_small), id(color_white), "%.0fdBm", id(wifi_rssi).state);
+      it.print(130, 54, id(icon_small), id(color_gray), ICO_CPU);
+      if (!isnan(id(chip_temp).state))
+        it.printf(232, 57, id(font_small), id(color_yellow), TextAlign::TOP_RIGHT, "%.1f°C", id(chip_temp).state);
+      it.filled_rectangle(0, 79, 240, 1, id(color_gray));
+
+      // Section 3 (y=80–123): Server Room
+      it.print(8, 83, id(font_small), id(hdr_server), "SERVER ROOM");
+      it.print(8, 101, id(icon_small), id(color_gray), ICO_FLASH);
+      if (!isnan(id(server_power).state))
+        it.printf(32, 104, id(font_small), id(color_white), "%.0fW", id(server_power).state);
+      it.print(130, 101, id(icon_small), id(color_gray), ICO_THERM);
+      if (!isnan(id(server_room_temp).state))
+        it.printf(232, 104, id(font_small), id(color_cyan), TextAlign::TOP_RIGHT, "%.1f°C", id(server_room_temp).state);
+      it.filled_rectangle(0, 123, 240, 1, id(color_gray));
+
+      // Section 4 (y=124–167): Living Room
+      it.print(8, 127, id(font_small), id(hdr_living), "LIVING ROOM");
+      it.print(8, 145, id(icon_small), id(color_gray), ICO_FLASH);
+      if (!isnan(id(desktop_power).state))
+        it.printf(32, 148, id(font_small), id(color_white), "%.0fW", id(desktop_power).state);
+      it.print(130, 145, id(icon_small), id(color_gray), ICO_THERM);
+      if (!isnan(id(living_room_temp).state))
+        it.printf(232, 148, id(font_small), id(color_cyan), TextAlign::TOP_RIGHT, "%.1f°C", id(living_room_temp).state);
+      it.filled_rectangle(0, 167, 240, 1, id(color_gray));
+
+      // Section 5 (y=168–239): Outside
+      it.print(8, 172, id(font_small), id(color_green), "OUTSIDE");
+      if (!isnan(id(weather_code).state)) {
+        it.print(183, 172, id(icon_weather), id(color_yellow), wx_icon(id(weather_code).state));
+        it.print(8, 192, id(font_small), id(color_cyan), wx_label(id(weather_code).state));
+      }
+      it.print(8, 210, id(icon_small), id(color_gray), ICO_THERM);
+      if (!isnan(id(outside_temp).state))
+        it.printf(32, 213, id(font_small), id(color_white), "%.1f°C", id(outside_temp).state);
+      it.print(86, 210, id(icon_small), id(color_gray), ICO_HUMID);
+      if (!isnan(id(outside_humidity).state))
+        it.printf(110, 213, id(font_small), id(color_white), "%.0f%%", id(outside_humidity).state);
+      it.print(151, 210, id(icon_small), id(color_gray), ICO_GAUGE);
+      if (!isnan(id(outside_pressure).state))
+        it.printf(175, 213, id(font_small), id(color_white), "%.0fhPa", id(outside_pressure).state);

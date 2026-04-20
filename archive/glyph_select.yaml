@@ -1,0 +1,27 @@
+output_path: fonts/merged_icons.ttf
+glyph_set:
+  - file_path: "fonts/materialdesignicons-webfont.ttf"
+    glyphs: [
+      "\U000F01E7",  # earth
+      "\U000F029A",  # gauge
+      "\U000F035B",  # mdi:memory (chip temp)
+      "\U000F048B",  # server
+      "\U000F0502",  # television
+      "\U000F050F",  # mdi:thermometer
+      "\U000F0590",  # weather-cloudy
+      "\U000F0591",  # mdi:weather-fog
+      "\U000F0593",  # weather-lightning
+      "\U000F0594",  # weather-night
+      "\U000F0595",  # weather-partly-cloudy
+      "\U000F0597",  # weather-rainy
+      "\U000F0598",  # weather-snowy
+      "\U000F0599",  # weather-sunny
+    ]
+  - file_path: "fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf"
+    glyphs: [
+      "\U0000E199",  # mdi:tornado
+      "\U0000EB31",  # mdi:wifi_find (disconnected)
+      "\U0000E1D8",  # mdi:signal_wifi_4_bar  (strong)
+      "\U0000EBE1",  # mdi:network_wifi_3_bar (medium)
+      "\U0000EBE4",  # mdi:network_wifi_1_bar (weak)
+    ]
