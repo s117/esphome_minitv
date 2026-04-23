@@ -588,7 +588,7 @@ lvgl:
                         id: weather_outdoor_humidity_section
                         x: 0
                         y: 0
-                        width: 82
+                        width: 88
                         height: 23
                         align: TOP_RIGHT
                         bg_color: 0x000000
@@ -656,7 +656,7 @@ lvgl:
                         id: weather_outdoor_sun_set_section
                         x: 0
                         y: 0
-                        width: 82
+                        width: 88
                         height: 23
                         align: RIGHT_MID
                         bg_color: 0x000000
@@ -724,7 +724,7 @@ lvgl:
                         id: weather_outdoor_pressure_section
                         x: 0
                         y: 0
-                        width: 82
+                        width: 88
                         height: 23
                         align: BOTTOM_RIGHT
                         bg_color: 0x000000
