@@ -282,7 +282,7 @@ interval:
 
 # ─── ST7789V3 240×240 display ─────────────────────────────────────────────────
 display:
-  - platform: ili9xxx
+  - platform: mipi_spi
     model: ST7789V
     dc_pin: GPIO2       # RS
     reset_pin: GPIO19
@@ -296,9 +296,11 @@ display:
       offset_width: 0
       offset_height: 80
     transform:
+      swap_xy: false
       mirror_x: false
       mirror_y: true
-    color_palette: 8BIT
+    color_depth: 8
+    draw_rounding: 1 # workaround for the noise line: https://community.home-assistant.io/t/upgrade-to-2026-04-breaks-tdisplay-st7789v-display/1004759/7
     auto_clear_enabled: false
     update_interval: 1s
     lambda: |-

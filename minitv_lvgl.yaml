@@ -391,7 +391,7 @@ interval:
 
 # ─── ST7789V3 240×240 display (LVGL-controlled, no lambda) ───────────────────
 display:
-  - platform: ili9xxx
+  - platform: mipi_spi
     model: ST7789V
     id: main_display
     dc_pin: GPIO2       # RS
@@ -406,6 +406,7 @@ display:
       offset_width: 0
       offset_height: 80
     transform:
+      swap_xy: false
       mirror_x: false
       mirror_y: true
     auto_clear_enabled: false
@@ -414,8 +415,6 @@ display:
 lvgl:
   displays:
     - main_display
-  color_depth: 16
-  buffer_size: 25%
   pages:
     - id: canvas_1
       bg_color: 0x000000
