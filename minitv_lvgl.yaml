@@ -97,6 +97,8 @@ sensor:
     name: "MiniTV Chip Temperature"
     id: chip_temp
     update_interval: 30s
+    filters:
+      - offset: -41.0
     on_value:
       then:
         - lvgl.label.update:
