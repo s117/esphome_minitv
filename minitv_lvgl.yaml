@@ -63,6 +63,7 @@ font:
       "\U000F0925",  # mdi:wifi-strength-3  (medium)
       "\U000F0928",  # mdi:wifi-strength-4  (strong)
       "\U000F092B",  # mdi:wifi-strength-alert-outline (disconnected)
+      "\U000F140C",  # mdi:lightning-bolt-outline
     ]
   - file:
       url: "https://cdn.jsdelivr.net/npm/@mdi/font@latest/fonts/materialdesignicons-webfont.ttf"
@@ -826,8 +827,8 @@ lvgl:
                         width: 30
                         height: 30
                         align: LEFT_MID
-                        text: "\uF0E7"
-                        text_font: montserrat_24
+                        text: "\U000F140C"
+                        text_font: mdi_icons_24
                         text_align: CENTER
                         text_color: 0xFFB700
                     - label:
@@ -945,8 +946,8 @@ lvgl:
                         width: 30
                         height: 30
                         align: LEFT_MID
-                        text: "\uF0E7"
-                        text_font: montserrat_24
+                        text: "\U000F140C"
+                        text_font: mdi_icons_24
                         text_align: CENTER
                         text_color: 0xFFB700
                     - label:
