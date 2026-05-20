@@ -1,6 +1,11 @@
+substitutions:
+  device_name: minitv-${device_id}
+  friendly_name: "MiniTV ${device_id}"
+  devices: !secret devices
+
 esphome:
-  name: minitv
-  friendly_name: MiniTV
+  name: ${device_name}
+  friendly_name: ${friendly_name}
 
 esp32:
   board: pico32
@@ -11,18 +16,20 @@ logger:
 
 api:
   encryption:
-    key: !secret api_encryption_key
+    key: ${ devices[device_name].api_key }
 
 ota:
   - platform: esphome
-    password: !secret ota_password
+    password: ${ devices[device_name].ota_password }
 
 wifi:
+  fast_connect: on
+  power_save_mode: none
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
-    ssid: "MiniTV Hotspot"
-    password: !secret ap_password
+    ssid: "Fallback ${device_name}"
+    password: ${ devices[device_name].fallback_ap_password }
 
 captive_portal:
 
