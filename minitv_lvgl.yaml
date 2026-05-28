@@ -14,13 +14,40 @@ esp32:
 
 logger:
 
-api:
-  encryption:
-    key: ${ devices[device_name].api_key }
-
 ota:
   - platform: esphome
     password: ${ devices[device_name].ota_password }
+
+api:
+  encryption:
+    key: ${ devices[device_name].api_key }
+  on_client_connected:
+    then:
+      - light.turn_on:
+          id: status_led
+          red: 0%
+          green: 100%
+          blue: 0%
+          effect: "Slow Pulse"
+  on_client_disconnected:
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - light.turn_on:
+                id: status_led
+                red: 0%
+                green: 0%
+                blue: 100%
+                effect: "Slow Pulse"
+          else:
+            - light.turn_on:
+                id: status_led
+                red: 100%
+                green: 0%
+                blue: 0%
+                effect: "Slow Pulse"
 
 wifi:
   fast_connect: on
@@ -30,6 +57,33 @@ wifi:
   ap:
     ssid: "Fallback ${device_name}"
     password: ${ devices[device_name].fallback_ap_password }
+  on_connect:
+    then:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - light.turn_on:
+                id: status_led
+                red: 0%
+                green: 100%
+                blue: 0%
+                effect: "Slow Pulse"
+          else:
+            - light.turn_on:
+                id: status_led
+                red: 0%
+                green: 0%
+                blue: 100%
+                effect: "Slow Pulse"
+  on_disconnect:
+    then:
+      - light.turn_on:
+          id: status_led
+          red: 100%
+          green: 0%
+          blue: 0%
+          effect: "Slow Pulse"
 
 captive_portal:
 
@@ -277,20 +331,6 @@ output:
     pin: GPIO4
     id: backlight_pwm
 
-# ─── Status LED max brightness (adjustable from HA) ──────────────────────────
-number:
-  - platform: template
-    name: "MiniTV LED Max Brightness"
-    id: led_max_brightness
-    optimistic: true
-    min_value: 0
-    max_value: 100
-    step: 5
-    initial_value: 30
-    restore_value: true
-    unit_of_measurement: "%"
-    entity_category: config
-
 # ─── WS2812B status LED + display backlight ───────────────────────────────────
 light:
   - platform: esp32_rmt_led_strip
@@ -302,21 +342,12 @@ light:
     id: status_led
     restore_mode: ALWAYS_ON
     effects:
-      - lambda:
+      - pulse:
           name: "Slow Pulse"
-          update_interval: 50ms
-          lambda: |-
-            static float t = 0.0f;
-            t += 50.0f / 3000.0f;   // 3-second full cycle
-            if (t > 1.0f) t -= 1.0f;
-            float b = (sinf(t * 2.0f * 3.14159265f) + 1.0f) / 2.0f;
-            b *= id(led_max_brightness).state / 100.0f;
-            auto call = id(status_led)->turn_on();
-            call.set_brightness(b < 0.01f ? 0.01f : b);
-            call.set_transition_length(0);
-            call.set_publish(false);
-            call.set_save(false);
-            call.perform();
+          transition_length: 1s
+          update_interval: 2s
+          min_brightness: 0%
+          max_brightness: 70%
 
   - platform: monochromatic
     output: backlight_pwm
@@ -327,38 +358,6 @@ light:
 
 # ─── Intervals ────────────────────────────────────────────────────────────────
 interval:
-  # Update LED color to reflect connectivity state
-  - interval: 5s
-    then:
-      - if:
-          condition:
-            wifi.connected:
-          then:
-            - if:
-                condition:
-                  api.connected:
-                then:
-                  - light.turn_on:
-                      id: status_led
-                      red: 0%
-                      green: 100%
-                      blue: 0%
-                      effect: "Slow Pulse"
-                else:
-                  - light.turn_on:
-                      id: status_led
-                      red: 0%
-                      green: 0%
-                      blue: 100%
-                      effect: "Slow Pulse"
-          else:
-            - light.turn_on:
-                id: status_led
-                red: 100%
-                green: 0%
-                blue: 0%
-                effect: "Slow Pulse"
-
   # Update time, date, weekday, and WiFi signal icon every second
   - interval: 1s
     then:
