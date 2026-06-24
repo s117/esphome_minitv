@@ -22,10 +22,10 @@ ota:
   - platform: esphome
     password: ${ devices[device_name].ota_password }
 
-api:
-  encryption:
-    key: ${ devices[device_name].api_key }
-  on_client_connected:
+# ─── Status feedback helpers ──────────────────────────────────────────────────
+# Status LED colors: green = HA connected, blue = WiFi up but no HA, red = no WiFi.
+script:
+  - id: status_led_green
     then:
       - light.turn_on:
           id: status_led
@@ -33,25 +33,49 @@ api:
           green: 100%
           blue: 0%
           effect: "Slow Pulse"
+  - id: status_led_blue
+    then:
+      - light.turn_on:
+          id: status_led
+          red: 0%
+          green: 0%
+          blue: 100%
+          effect: "Slow Pulse"
+  - id: status_led_red
+    then:
+      - light.turn_on:
+          id: status_led
+          red: 100%
+          green: 0%
+          blue: 0%
+          effect: "Slow Pulse"
+  # Set the status-bar WiFi glyph from the current RSSI.
+  - id: update_wifi_icon
+    then:
+      - lvgl.label.update:
+          id: status_bar_wifi_signal_icon
+          text: !lambda |-
+            float r = id(wifi_rssi).state;
+            if (isnan(r) || r < -75) return std::string("\U000F091F");
+            if (r < -65) return std::string("\U000F0922");
+            if (r < -55) return std::string("\U000F0925");
+            return std::string("\U000F0928");
+
+api:
+  encryption:
+    key: ${ devices[device_name].api_key }
+  on_client_connected:
+    then:
+      - script.execute: status_led_green
   on_client_disconnected:
     then:
       - if:
           condition:
             wifi.connected:
           then:
-            - light.turn_on:
-                id: status_led
-                red: 0%
-                green: 0%
-                blue: 100%
-                effect: "Slow Pulse"
+            - script.execute: status_led_blue
           else:
-            - light.turn_on:
-                id: status_led
-                red: 100%
-                green: 0%
-                blue: 0%
-                effect: "Slow Pulse"
+            - script.execute: status_led_red
 
 wifi:
   fast_connect: on
@@ -67,36 +91,14 @@ wifi:
           condition:
             api.connected:
           then:
-            - light.turn_on:
-                id: status_led
-                red: 0%
-                green: 100%
-                blue: 0%
-                effect: "Slow Pulse"
+            - script.execute: status_led_green
           else:
-            - light.turn_on:
-                id: status_led
-                red: 0%
-                green: 0%
-                blue: 100%
-                effect: "Slow Pulse"
+            - script.execute: status_led_blue
       # Replace the disconnected glyph with current signal strength right away.
-      - lvgl.label.update:
-          id: status_bar_wifi_signal_icon
-          text: !lambda |-
-            float r = id(wifi_rssi).state;
-            if (isnan(r) || r < -75) return std::string("\U000F091F");
-            if (r < -65) return std::string("\U000F0922");
-            if (r < -55) return std::string("\U000F0925");
-            return std::string("\U000F0928");
+      - script.execute: update_wifi_icon
   on_disconnect:
     then:
-      - light.turn_on:
-          id: status_led
-          red: 100%
-          green: 0%
-          blue: 0%
-          effect: "Slow Pulse"
+      - script.execute: status_led_red
       - lvgl.label.update:
           id: status_bar_wifi_signal_icon
           text: "\U000F092B"
@@ -176,14 +178,7 @@ sensor:
             condition:
               wifi.connected:
             then:
-              - lvgl.label.update:
-                  id: status_bar_wifi_signal_icon
-                  text: !lambda |-
-                    float r = x;
-                    if (isnan(r) || r < -75) return std::string("\U000F091F");
-                    if (r < -65) return std::string("\U000F0922");
-                    if (r < -55) return std::string("\U000F0925");
-                    return std::string("\U000F0928");
+              - script.execute: update_wifi_icon
 
   - platform: internal_temperature
     name: "MiniTV Chip Temperature"
