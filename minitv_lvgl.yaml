@@ -13,6 +13,10 @@ esp32:
     type: esp-idf
 
 logger:
+  # DEBUG logs every HA state push over the UART, which blocks the main loop
+  # (~100ms stalls) and starves the API keepalive. INFO keeps useful logs
+  # without the per-state spam.
+  level: INFO
 
 ota:
   - platform: esphome
@@ -76,6 +80,15 @@ wifi:
                 green: 0%
                 blue: 100%
                 effect: "Slow Pulse"
+      # Replace the disconnected glyph with current signal strength right away.
+      - lvgl.label.update:
+          id: status_bar_wifi_signal_icon
+          text: !lambda |-
+            float r = id(wifi_rssi).state;
+            if (isnan(r) || r < -75) return std::string("\U000F091F");
+            if (r < -65) return std::string("\U000F0922");
+            if (r < -55) return std::string("\U000F0925");
+            return std::string("\U000F0928");
   on_disconnect:
     then:
       - light.turn_on:
@@ -84,6 +97,9 @@ wifi:
           green: 0%
           blue: 0%
           effect: "Slow Pulse"
+      - lvgl.label.update:
+          id: status_bar_wifi_signal_icon
+          text: "\U000F092B"
 
 captive_portal:
 
@@ -150,7 +166,24 @@ sensor:
   - platform: wifi_signal
     name: "MiniTV WiFi Signal"
     id: wifi_rssi
-    update_interval: 60s
+    update_interval: 30s
+    on_value:
+      then:
+        # Only reflect signal strength while connected; the disconnected glyph
+        # is owned by wifi:on_disconnect and must not be overwritten by a stray
+        # reading taken while the link is down.
+        - if:
+            condition:
+              wifi.connected:
+            then:
+              - lvgl.label.update:
+                  id: status_bar_wifi_signal_icon
+                  text: !lambda |-
+                    float r = x;
+                    if (isnan(r) || r < -75) return std::string("\U000F091F");
+                    if (r < -65) return std::string("\U000F0922");
+                    if (r < -55) return std::string("\U000F0925");
+                    return std::string("\U000F0928");
 
   - platform: internal_temperature
     name: "MiniTV Chip Temperature"
@@ -315,15 +348,28 @@ esp32_touch:
   setup_mode: false
 
 binary_sensor:
+  # Touch pads are local-only (not exposed to HA) and control the backlight.
   - platform: esp32_touch
     name: "Left Touch"
+    internal: true
     pin: GPIO13
     threshold: 500
+    on_press:
+      then:
+        - light.dim_relative:
+            id: backlight
+            relative_brightness: -20%
 
   - platform: esp32_touch
     name: "Right Touch"
+    internal: true
     pin: GPIO15
     threshold: 500
+    on_press:
+      then:
+        - light.dim_relative:
+            id: backlight
+            relative_brightness: +20%
 
 # ─── Display backlight (PWM, controllable from HA) ────────────────────────────
 output:
@@ -340,6 +386,7 @@ light:
     num_leds: 1
     name: "MiniTV Status LED"
     id: status_led
+    internal: true
     restore_mode: ALWAYS_ON
     effects:
       - pulse:
@@ -353,12 +400,13 @@ light:
     output: backlight_pwm
     name: "MiniTV Display Backlight"
     id: backlight
+    internal: true
     restore_mode: ALWAYS_ON
     default_transition_length: 500ms
 
 # ─── Intervals ────────────────────────────────────────────────────────────────
 interval:
-  # Update time, date, weekday, and WiFi signal icon every second
+  # Clock ticks every second — only the time label re-renders/flushes.
   - interval: 1s
     then:
       - if:
@@ -368,6 +416,14 @@ interval:
             - lvgl.label.update:
                 id: status_bar_time_value
                 text: !lambda return id(ha_time).now().strftime("%H:%M:%S");
+
+  # Date and weekday only change once per day — refresh once a minute.
+  - interval: 60s
+    then:
+      - if:
+          condition:
+            lambda: return id(ha_time).now().is_valid();
+          then:
             - lvgl.label.update:
                 id: weather_date_value
                 text: !lambda |-
@@ -378,22 +434,6 @@ interval:
                 text: !lambda |-
                   static const char* days[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
                   return std::string(days[id(ha_time).now().day_of_week - 1]);
-      - if:
-          condition:
-            wifi.connected:
-          then:
-            - lvgl.label.update:
-                id: status_bar_wifi_signal_icon
-                text: !lambda |-
-                  float r = id(wifi_rssi).state;
-                  if (isnan(r) || r < -75) return std::string("\U000F091F");
-                  if (r < -65) return std::string("\U000F0922");
-                  if (r < -55) return std::string("\U000F0925");
-                  return std::string("\U000F0928");
-          else:
-            - lvgl.label.update:
-                id: status_bar_wifi_signal_icon
-                text: "\U000F092B"
 
 # ─── ST7789V3 240×240 display (LVGL-controlled, no lambda) ───────────────────
 display:
@@ -421,6 +461,9 @@ display:
 lvgl:
   displays:
     - main_display
+  # Smaller buffer = shorter individual SPI flushes, so the main loop returns
+  # to service the API/network more often.
+  buffer_size: 25%
   pages:
     - id: canvas_1
       bg_color: 0x000000
