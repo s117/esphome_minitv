@@ -13,10 +13,27 @@ esp32:
     type: esp-idf
 
 logger:
-  # DEBUG logs every HA state push over the UART, which blocks the main loop
-  # (~100ms stalls) and starves the API keepalive. INFO keeps useful logs
-  # without the per-state spam.
-  level: INFO
+  # Keep api/wifi at DEBUG so the reason for a dropped HA connection is actually
+  # recorded (these are the only logs that identify a disassociation, a roam, or
+  # a clean TCP close). Sensor state pushes log at VERBOSE in this ESPHome
+  # version, not DEBUG, so DEBUG costs almost nothing here -- measured max loop
+  # time with this enabled is 30-40ms. The chatty per-render tags are pinned to
+  # INFO so the UART never becomes the bottleneck.
+  level: DEBUG
+  logs:
+    binary_sensor: INFO
+    lvgl: INFO
+    light: INFO
+    esp32_touch: INFO
+    homeassistant.sensor: INFO
+    homeassistant.text_sensor: INFO
+    mipi_spi: INFO
+    scheduler: INFO
+
+# Heap / fragmentation / loop-time instrumentation, surfaced to HA so a future
+# drop can be correlated against resource health instead of guessed at.
+debug:
+  update_interval: 60s
 
 ota:
   - platform: esphome
@@ -64,11 +81,27 @@ script:
 api:
   encryption:
     key: ${ devices[device_name].api_key }
+  # On 2026-09-06 23:28 EDT the device stayed powered but could not re-establish
+  # the HA connection; it only recovered when this timeout fired and rebooted it
+  # 13.6 minutes later (HA logged reset reason "Reboot request from api").
+  # 5min keeps the self-heal backstop but caps that outage, while still riding
+  # out a normal HA restart (typically 1-3min) without a spurious reboot.
+  reboot_timeout: 5min
   on_client_connected:
     then:
       - script.execute: status_led_green
   on_client_disconnected:
     then:
+      # Record the drop with the state that distinguishes the plausible causes:
+      # wifi still up => TCP/API-level loss (interference, HA side, path);
+      # wifi down     => radio/association loss. Uptime separates a reconnect
+      # from a silent reboot.
+      - lambda: |-
+          ESP_LOGW("diag", "HA client disconnected: wifi=%d rssi=%.0f uptime=%us heap_free=%u",
+                   esphome::wifi::global_wifi_component->is_connected() ? 1 : 0,
+                   id(wifi_rssi).state,
+                   (unsigned) (millis() / 1000),
+                   (unsigned) esp_get_free_heap_size());
       - if:
           condition:
             wifi.connected:
@@ -80,6 +113,28 @@ api:
 wifi:
   fast_connect: on
   power_save_mode: none
+  # HA recorded three "power-on event" resets (ESP_RST_POWERON) on 2026-09-06,
+  # i.e. the 3V3 rail actually collapsed -- not a panic, not a watchdog, not the
+  # brownout detector, all of which ESPHome labels distinctly. WiFi transmit is
+  # by far the largest current transient on this board, so capping TX power
+  # shrinks it. ESPHome also feeds this to CONFIG_ESP_PHY_MAX_WIFI_TX_POWER,
+  # which it documents as preventing brownout on marginal supplies. At -35 dBm
+  # there is ~25 dB of link margin, so this costs nothing in range.
+  #
+  # Result: resets were arriving every ~2h before this; after it the device ran
+  # 48h+ with zero resets and 371/371 health samples reporting the HA link up
+  # (36h of that verified by a gapless serial capture, 2026-09-07/09).
+  # Still a mitigation, not a cure: a rail that collapses under a normal TX
+  # burst is a hardware weakness, so if resets ever return, suspect the supply,
+  # cable or connector rather than this setting.
+  output_power: 15dB
+  # Single-AP network: ESPHome's post-connect roaming would scan every 5 minutes
+  # whenever RSSI drops below -49 dBm, and a scan leaves the home channel (and a
+  # successful roam re-associates outright), which tears down the HA connection.
+  # With one AP there is never a better BSSID to move to, so the scan is pure
+  # risk. Not the observed cause here (this device sits at -35 dBm, where the
+  # check always skips), but it removes a real failure mode if signal degrades.
+  post_connect_roaming: false
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
@@ -165,6 +220,31 @@ time:
 
 # ─── Sensors ──────────────────────────────────────────────────────────────────
 sensor:
+  # Diagnostics exposed to HA. These were flat and healthy across a 50-minute
+  # bench run (heap ~143 KB, largest free block ~108 KB, max loop 29-38 ms), so
+  # they are here to catch a regression, not because they are currently at risk.
+  - platform: debug
+    free:
+      name: "MiniTV Heap Free"
+      id: dbg_heap_free
+      entity_category: diagnostic
+    block:
+      name: "MiniTV Heap Max Block"
+      id: dbg_heap_block
+      entity_category: diagnostic
+    loop_time:
+      name: "MiniTV Loop Time"
+      id: dbg_loop_time
+      entity_category: diagnostic
+
+  # Uptime makes a reboot unmistakable in HA history: if the device drops off and
+  # uptime resets, it restarted; if uptime keeps climbing, only the API link went.
+  - platform: uptime
+    name: "MiniTV Uptime"
+    id: device_uptime
+    update_interval: 60s
+    entity_category: diagnostic
+
   - platform: wifi_signal
     name: "MiniTV WiFi Signal"
     id: wifi_rssi
@@ -296,6 +376,13 @@ sensor:
 # ─── Text sensors for sunrise / sunset ───────────────────────────────────────
 # HA provides UTC ISO 8601 datetimes; convert to local time via ha_time UTC offset.
 text_sensor:
+  # Survives a restart, so it distinguishes a crash (panic/WDT/brownout) from a
+  # clean OTA or power-cycle after the fact.
+  - platform: debug
+    reset_reason:
+      name: "MiniTV Reset Reason"
+      entity_category: diagnostic
+
   - platform: homeassistant
     entity_id: sensor.sun_next_rising
     id: sun_rise_raw
@@ -401,6 +488,22 @@ light:
 
 # ─── Intervals ────────────────────────────────────────────────────────────────
 interval:
+  # One health line per 5 minutes. Cheap, and it means a serial capture during a
+  # future drop already has the surrounding heap/loop/link context.
+  - interval: 300s
+    then:
+      - lambda: |-
+          ESP_LOGI("diag",
+                   "heap_free=%u heap_min=%u max_block=%u loop_max_ms=%u api_conn=%d wifi=%d rssi=%.0f uptime=%us",
+                   (unsigned) esp_get_free_heap_size(),
+                   (unsigned) esp_get_minimum_free_heap_size(),
+                   (unsigned) heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                   (unsigned) id(dbg_loop_time).state,
+                   esphome::api::global_api_server->is_connected() ? 1 : 0,
+                   esphome::wifi::global_wifi_component->is_connected() ? 1 : 0,
+                   id(wifi_rssi).state,
+                   (unsigned) (millis() / 1000));
+
   # Clock ticks every second — only the time label re-renders/flushes.
   - interval: 1s
     then:
@@ -456,8 +559,10 @@ display:
 lvgl:
   displays:
     - main_display
-  # Smaller buffer = shorter individual SPI flushes, so the main loop returns
-  # to service the API/network more often.
+  # 25% of the frame (~28 KB, ~6 ms per flush at 40 MHz). Kept because it is a
+  # reasonable RAM/latency trade, NOT because flush length was ever the cause of
+  # the HA drops -- measured max loop time is 30-40 ms, far inside the API's
+  # ~90 s tolerance.
   buffer_size: 25%
   pages:
     - id: canvas_1
