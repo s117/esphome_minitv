@@ -273,7 +273,7 @@ sensor:
             text: !lambda return str_sprintf("%.1f°C", x);
 
   - platform: homeassistant
-    entity_id: sensor.shellypmminig3_84fce63eb108_power
+    entity_id: sensor.server_room_cyberpower_load_power_watt_derived
     id: server_power
     name: "Server Room Power"
     internal: true
