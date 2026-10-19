@@ -284,7 +284,7 @@ sensor:
             text: !lambda return str_sprintf("%.0fW", x);
 
   - platform: homeassistant
-    entity_id: sensor.server_room_temperature
+    entity_id: sensor.nut_pi_sensor_gpio4_temperature
     id: server_room_temp
     name: "Server Room Temperature"
     internal: true
